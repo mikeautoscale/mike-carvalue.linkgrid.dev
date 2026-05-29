@@ -99,6 +99,9 @@ class Importer
         $this->log('Building hot-path index idx_ymm (make_key, model_key, year)...');
         $this->ensureIndex();
 
+        $this->log('Rebuilding vehicle_summary lookup rollup...');
+        $this->buildSummary();
+
         $this->report(true);
         $this->summary();
     }
@@ -177,6 +180,35 @@ class Importer
                     REFERENCES dealers (id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         SQL);
+
+        // Materialized make/model/year rollup powering the fast lookup endpoints
+        // (makes/models autocomplete + the YMM parser). Rebuilt after each load.
+        $this->pdo->exec(<<<SQL
+            CREATE TABLE IF NOT EXISTS vehicle_summary (
+                make_key  VARCHAR(64)  NOT NULL,
+                model_key VARCHAR(128) NOT NULL,
+                `year`    SMALLINT UNSIGNED NOT NULL,
+                make      VARCHAR(64)  NOT NULL,
+                model     VARCHAR(128) NOT NULL,
+                listings  INT UNSIGNED NOT NULL,
+                PRIMARY KEY (make_key, model_key, `year`),
+                KEY idx_make (make_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+    }
+
+    /** Rebuild the make/model/year rollup from the freshly loaded listings. */
+    private function buildSummary(): void
+    {
+        $this->pdo->exec('TRUNCATE TABLE vehicle_summary');
+        $this->pdo->exec(
+            'INSERT INTO vehicle_summary (make_key, model_key, `year`, make, model, listings) '
+            . 'SELECT make_key, model_key, `year`, MIN(make), MIN(model), COUNT(*) '
+            . 'FROM listings '
+            . "WHERE make_key REGEXP '[A-Za-z]' AND model_key REGEXP '[A-Za-z]' "
+            . 'AND `year` IS NOT NULL '
+            . 'GROUP BY make_key, model_key, `year`'
+        );
     }
 
     /** Download to a local cache (with progress) or use a local path directly. */
