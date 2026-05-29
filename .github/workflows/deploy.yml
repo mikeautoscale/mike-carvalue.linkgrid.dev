@@ -22,8 +22,11 @@ jobs:
       - name: Configure SSH access
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          # Fail early with a clear message if SSH_KEY is malformed.
+          ssh-keygen -y -P '' -f ~/.ssh/id_rsa > /dev/null
           ssh-keyscan -H mike-carvalue.linkgrid.dev >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Rsync latest code to server
