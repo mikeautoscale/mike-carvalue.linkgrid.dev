@@ -1,0 +1,72 @@
+---
+name: Data Import (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Source data file (URL or path on the server)
+        required: false
+        default: https://linkgrid.com/downloads/carvalue_project/inventory-listing-2022-08-17.txt
+
+concurrency:
+  group: production-data-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: Import full inventory into MariaDB
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 180
+    steps:
+      - name: Configure SSH access
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H mike-carvalue.linkgrid.dev >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Configure MySQL password from .env
+        run: |
+          ssh -i ~/.ssh/id_rsa root@mike-carvalue.linkgrid.dev bash -s <<'EOSSH'
+          set -euo pipefail
+          cd /home/mike-carvalue.linkgrid.dev
+          umask 027
+          printf 'DB_SOCKET=%s\nDB_NAME=%s\nDB_USER=%s\nDB_PASS=%s\n' \
+            '/var/lib/mysql/mysql.sock' 'mike-carvalue' 'carvalue' '${{ secrets.DB_PASSWORD }}' \
+            > config/.env
+          # Ensure the database exists so the grant below always succeeds,
+          # then sync the read-only web user to the password stored in .env.
+          DB_PASS=$(grep -E '^DB_PASS=' config/.env | cut -d= -f2-)
+          mysql -e "CREATE DATABASE IF NOT EXISTS \`mike-carvalue\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+          mysql -e "CREATE USER IF NOT EXISTS 'carvalue'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+          mysql -e "ALTER USER 'carvalue'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+          mysql -e "GRANT SELECT ON \`mike-carvalue\`.* TO 'carvalue'@'localhost';"
+          mysql -e "FLUSH PRIVILEGES;"
+          echo "MySQL credentials configured from .env."
+          EOSSH
+
+      - name: Create tables and import full data file
+        run: |
+          ssh -i ~/.ssh/id_rsa root@mike-carvalue.linkgrid.dev bash -s <<'EOSSH'
+          set -euo pipefail
+          cd /home/mike-carvalue.linkgrid.dev
+          # The importer creates the database/tables if needed, streams in the
+          # full file, rebuilds the lookup rollup, and prints a summary.
+          php bin/import-data.php --source='${{ github.event.inputs.source }}'
+          EOSSH
+
+      - name: Verify import
+        run: |
+          ssh -i ~/.ssh/id_rsa root@mike-carvalue.linkgrid.dev bash -s <<'EOSSH'
+          set -euo pipefail
+          LISTINGS=$(mysql -N mike-carvalue -e "SELECT COUNT(*) FROM listings;")
+          PRICED=$(mysql -N mike-carvalue -e "SELECT COUNT(*) FROM listings WHERE listing_price IS NOT NULL;")
+          DEALERS=$(mysql -N mike-carvalue -e "SELECT COUNT(*) FROM dealers;")
+          SUMMARY=$(mysql -N mike-carvalue -e "SELECT COUNT(*) FROM vehicle_summary;")
+          echo "listings=${LISTINGS} priced=${PRICED} dealers=${DEALERS} summary=${SUMMARY}"
+          test "${LISTINGS}" -ge 4000000
+          test "${SUMMARY}" -gt 0
+          echo "Import verified."
+          EOSSH

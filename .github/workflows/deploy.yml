@@ -1,0 +1,52 @@
+---
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy code and nginx config
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH access
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H mike-carvalue.linkgrid.dev >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Rsync latest code to server
+        run: |
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='data' \
+            --exclude='config/.env' \
+            --exclude='tests' \
+            --exclude='phpunit.phar' \
+            --exclude='.phpunit.cache' \
+            --exclude='.phpunit.result.cache' \
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
+            ./ root@mike-carvalue.linkgrid.dev:/home/mike-carvalue.linkgrid.dev/
+
+      - name: Install nginx config and reload services
+        run: |
+          ssh -i ~/.ssh/id_rsa root@mike-carvalue.linkgrid.dev bash -s <<'EOSSH'
+          set -euo pipefail
+          cp /home/mike-carvalue.linkgrid.dev/conf/mikevalue.conf /etc/nginx/conf.d/mikevalue.conf
+          nginx -t
+          systemctl reload nginx
+          systemctl reload php-fpm
+          echo "Deployment complete."
+          EOSSH

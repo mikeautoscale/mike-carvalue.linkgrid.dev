@@ -1,0 +1,13 @@
+---
+extends: default
+
+rules:
+  # GitHub Actions uses `on:` as a mapping key, which the default truthy rule
+  # flags. Allow it explicitly.
+  truthy:
+    allowed-values: ['true', 'false', 'on']
+  line-length:
+    max: 140
+    level: warning
+  document-start:
+    present: true
