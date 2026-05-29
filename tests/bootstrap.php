@@ -12,6 +12,14 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/src/autoload.php';
 
+// Tests run as OS root and need DDL/DROP (importer test) plus read access to
+// scratch databases, so force the root socket connection ahead of config/.env.
+// Real env vars take precedence in config.php, and the child `php -S` server
+// inherits these, so its endpoints connect the same way.
+putenv('DB_USER=root');
+putenv('DB_PASS=');
+putenv('DB_SOCKET=/var/lib/mysql/mysql.sock');
+
 define('CARVALUE_ROOT', dirname(__DIR__));
 define('CARVALUE_TEST_HOST', '127.0.0.1');
 define('CARVALUE_TEST_PORT', (int) (getenv('CARVALUE_TEST_PORT') ?: 8077));

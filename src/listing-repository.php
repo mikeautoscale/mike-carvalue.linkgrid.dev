@@ -67,6 +67,21 @@ final class ListingRepository
     }
 
     /**
+     * Distinct model years present in the data, newest first.
+     *
+     * @return int[]
+     */
+    public function years(int $minListings = 1): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT `year` FROM vehicle_summary '
+            . 'GROUP BY `year` HAVING SUM(listings) >= ? ORDER BY `year` DESC'
+        );
+        $stmt->execute([$minListings]);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
      * Distinct models for a make (optionally a year), alphabetical.
      *
      * @return string[]

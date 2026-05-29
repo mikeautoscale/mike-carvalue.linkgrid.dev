@@ -14,6 +14,12 @@ final class LookupController
     ) {
     }
 
+    /** GET /api/years.php */
+    public function years(Request $request): Response
+    {
+        return Response::json(['years' => $this->repo->years()]);
+    }
+
     /** GET /api/makes.php */
     public function makes(Request $request): Response
     {

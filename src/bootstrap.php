@@ -15,6 +15,9 @@ $repository = new CarValue\ListingRepository($pdo);
 $lookup = $config['lookup'] ?? [];
 $minMake = (int) ($lookup['min_make_listings'] ?? 1);
 $minModel = (int) ($lookup['min_model_listings'] ?? 1);
+// The parser stays permissive so a directly-typed make below the dropdown
+// threshold can still be estimated.
+$parserMinMake = (int) ($lookup['parser_min_make_listings'] ?? $minMake);
 
 return [
     'config'     => $config,
@@ -24,7 +27,7 @@ return [
     'estimateController' => new CarValue\EstimateController(
         $repository,
         new CarValue\ValueEstimator($config['estimator'] ?? []),
-        $minMake
+        $parserMinMake
     ),
     'lookupController' => new CarValue\LookupController($repository, $minMake, $minModel),
 ];
