@@ -39,6 +39,9 @@ jobs:
           printf 'DB_SOCKET=%s\nDB_NAME=%s\nDB_USER=%s\nDB_PASS=%s\n' \
             '/var/lib/mysql/mysql.sock' 'mike-carvalue' 'carvalue' '${{ secrets.DB_PASSWORD }}' \
             > config/.env
+          # php-fpm runs as 'apache' and must read the secret; keep it group-readable only.
+          chown root:apache config/.env
+          chmod 640 config/.env
           # Ensure the database exists so the grant below always succeeds,
           # then sync the read-only web user to the password stored in .env.
           DB_PASS=$(grep -E '^DB_PASS=' config/.env | cut -d= -f2-)
